@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { daily, isoDate } from '../core/daily.js';
-import { HARNESS_LABELS } from '../core/events.js';
+import { HARNESS_LABELS, HARNESS_LABEL_WIDTH } from '../core/events.js';
 import { displayProject } from '../core/format.js';
 import { rollup } from '../core/rollup.js';
 import type { Rollup } from '../core/rollup.js';
@@ -46,7 +46,8 @@ Reports
   playtime                     everything, with tabs for year, month and today
   playtime today|month|year    open on one window (week works too)
   playtime <project>           drill into one project
-  playtime harness <name>      drill into claude-code, codex or opencode
+  playtime harness <name>      drill into one harness: claude-code, codex, opencode,
+                               pi, copilot, gemini, cline, qwen, goose or droid
 
   In a terminal a report is browsable: tab and shift-tab move between windows,
   q quits. Piped, or in any format but text, it prints one static block.
@@ -334,15 +335,20 @@ async function main(): Promise<number> {
       return repair(paths, command);
 
     case 'install': {
+      let failed = false;
       for (const harness of command.harnesses) {
-        const result = await install(harness, { dryRun: command.dryRun });
+        const result = await install(harness, {
+          dryRun: command.dryRun,
+          onlyFound: command.onlyFound,
+        });
+        if (result.status === 'failed') failed = true;
         const suffix = result.detail ? ` (${result.detail})` : '';
         process.stdout.write(
-          `  ${HARNESS_LABELS[result.harness].padEnd(12)} ${result.status.padEnd(14)} ${result.target}${suffix}\n`,
+          `  ${HARNESS_LABELS[result.harness].padEnd(HARNESS_LABEL_WIDTH + 2)} ${result.status.padEnd(14)} ${result.target}${suffix}\n`,
         );
       }
       process.stdout.write('\nRestart any running harness sessions to pick the hooks up.\n');
-      return 0;
+      return failed ? 1 : 0;
     }
 
     case 'daemon': {
@@ -361,12 +367,19 @@ async function main(): Promise<number> {
         return 1;
       }
 
+      // Ctrl-C should save what is open and release the lock, not just die.
+      const controller = new AbortController();
+      for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(signal, () => controller.abort());
+      }
+
       try {
-        await runDaemon(paths, configFromEnv(process.env, settings), {
-          now: Date.now,
-          isAlive: aliveProbe,
-          pid: process.pid,
-        });
+        await runDaemon(
+          paths,
+          configFromEnv(process.env, settings),
+          { now: Date.now, isAlive: aliveProbe, pid: process.pid },
+          controller.signal,
+        );
       } finally {
         await lock.release();
       }

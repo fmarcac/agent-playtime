@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hookNameFor } from './plugin.js';
+import { hookNameFor } from './events.js';
 
 test('session lifecycle events map straight through', () => {
   assert.equal(hookNameFor({ type: 'session.created' }), 'session.created');
@@ -33,4 +33,13 @@ test('a message with no role information is ignored', () => {
 test('events Playtime does not care about are ignored', () => {
   assert.equal(hookNameFor({ type: 'file.edited' }), null);
   assert.equal(hookNameFor({}), null);
+});
+
+test('a session.status of idle is the deprecated session.idle under its new name', () => {
+  const idle = { type: 'session.status', properties: { sessionID: 's', status: { type: 'idle' } } };
+  const busy = { type: 'session.status', properties: { sessionID: 's', status: { type: 'busy' } } };
+
+  assert.equal(hookNameFor(idle), 'session.idle');
+  assert.equal(hookNameFor(busy), null);
+  assert.equal(hookNameFor({ type: 'session.status' }), null);
 });

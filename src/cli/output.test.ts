@@ -227,3 +227,12 @@ test('day rows come from the daily series', () => {
   assert.match(text.split('\n')[0] ?? '', /^date,start,end,open/);
   assert.equal(text.trimEnd().split('\n').length, days.length + 1);
 });
+
+test('--field converts durations once and leaves counts alone', () => {
+  const data = rollup([session({ hours: 3 })]);
+  const base = { ...defaultOutput(), format: 'field' as const, units: 'h' as const };
+
+  assert.equal(renderOutput(data, [], { ...base, field: 'total.open' }).text, '3\n');
+  assert.equal(renderOutput(data, [], { ...base, field: 'total.sessions' }).text, '1\n');
+  assert.equal(renderOutput(data, [], { ...base, shape: 'totals', field: '0.open' }).text, '3\n');
+});

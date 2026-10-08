@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { HARNESSES } from '../core/events.js';
 import { parseCommand } from './args.js';
 import type { Command } from './args.js';
 import type { OutputOptions } from './output.js';
@@ -207,8 +208,9 @@ test('statusline supports json output', () => {
 test('install covers every harness unless told otherwise', () => {
   assert.deepEqual(parseCommand(['install']), {
     kind: 'install',
-    harnesses: ['claude-code', 'codex', 'opencode'],
+    harnesses: [...HARNESSES],
     dryRun: false,
+    onlyFound: true,
   });
 });
 
@@ -217,6 +219,7 @@ test('install can be limited to one harness', () => {
     kind: 'install',
     harnesses: ['opencode'],
     dryRun: false,
+    onlyFound: false,
   });
 });
 

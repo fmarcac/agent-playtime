@@ -1,6 +1,7 @@
 # Playtime
 
-Steam-style playtime tracking for CLI agent harnesses: Claude Code, Codex and OpenCode.
+Steam-style playtime tracking for CLI agent harnesses: Claude Code, Codex,
+OpenCode, Pi, Copilot CLI, Gemini CLI, Cline, Qwen Code, Goose and Factory Droid.
 
 Steam tells you that you have 412 hours in a game and which ones you played this
 week. Nothing does that for agent harnesses. Playtime does.
@@ -43,18 +44,58 @@ npx agent-playtime
 ```
 
 `playtime install` wires up every harness it finds, backing up each settings
-file first. Restart running sessions to pick the hooks up. Limit it with
+file first, and skips any whose config directory does not exist. Restart running sessions to pick the hooks up. Limit it with
 `--harness codex`, or preview with `--dry-run`.
 
-You can also install it from inside a harness:
+Every harness has a manual route, `playtime install --harness <id>`, with `<id>`
+one of `claude-code`, `codex`, `opencode`, `pi`, `copilot`, `gemini`, `cline`,
+`qwen`, `goose` or `droid`. Three can also be installed from inside the harness:
 
 | Harness | From within the harness | Manual |
 |---|---|---|
 | Claude Code | `/plugin marketplace add fmarcac/agent-playtime` then `/plugin install playtime` | `playtime install --harness claude-code` |
 | Codex | `/plugin marketplace add fmarcac/agent-playtime` then `/plugin install playtime@playtime` | `playtime install --harness codex` |
 | OpenCode | add `"plugin": ["agent-playtime"]` to `opencode.json` | `playtime install --harness opencode` |
+| Pi | | `playtime install --harness pi` |
+| Copilot CLI | | `playtime install --harness copilot` |
+| Gemini CLI | | `playtime install --harness gemini` |
+| Cline | | `playtime install --harness cline` |
+| Qwen Code | | `playtime install --harness qwen` |
+| Goose | | `playtime install --harness goose` |
+| Factory Droid | | `playtime install --harness droid` |
 
-Pick one route per harness. Doing both records every event twice.
+Pick one route per harness. Doing both records every event twice. The plugin
+route for Claude Code and Codex runs from a git checkout with no build, so it
+starts the tracker through the `playtime` command: install the npm package too.
+
+## Harness support
+
+| Harness | Mechanism | Measured |
+|---|---|---|
+| Claude Code | hooks in `settings.json` | open, busy, blocked |
+| Codex | hooks in `hooks.json` | open, busy, blocked |
+| OpenCode | in-process plugin | open, busy, blocked |
+| Pi | in-process extension, `agent-playtime/pi` | open, busy |
+| Copilot CLI | `hooks/playtime.json` in its config directory | open, busy, blocked |
+| Gemini CLI | hooks in `settings.json` | open, busy, blocked |
+| Cline | one executable per event in `~/.cline/hooks/` | open, busy |
+| Qwen Code | hooks in `settings.json` | open, busy, blocked |
+| Goose | a plugin in `~/.agents/plugins/playtime/` | open, busy |
+| Factory Droid | hooks in `~/.factory/hooks.json` | open, busy, blocked |
+
+Notes:
+
+- Pi, Goose and Cline have no permission prompt event, so their blocked time is 0.
+- Codex only runs hooks you have approved. After installing, approve them in
+  Codex's hooks review, and again after any change to them.
+- Cline and Goose only report a session ending in some cases, so their
+  sessions usually end when the process exits, which Playtime watches anyway.
+- Copilot CLI's `sessionEnd` also fires after every turn in piped mode, so
+  sessions run that way are cut into short ones.
+- Goose's config directory is a guess (`~/.config/goose` or
+  `~/.local/share/goose`); install is skipped if neither exists.
+- Pi's extension is installed as a one-line file that re-exports
+  `agent-playtime/pi`, so updating the package updates it.
 
 The status line integration is Claude Code only, through ccstatusline. Codex's
 status line takes a fixed set of built-in widgets and has no custom command
@@ -86,7 +127,7 @@ playtime config set count stacked     # or pass --stacked for one run
 playtime                     everything, opening on all time
 playtime today|month|year    open on one window (week works too)
 playtime <project>           drill into one project
-playtime harness <name>      drill into claude-code, codex or opencode
+playtime harness <name>      drill into one harness, such as claude-code or codex
 playtime statusline          one compact line for status bars
 playtime config              show and change settings
 playtime install             wire up every harness found
@@ -252,12 +293,13 @@ samples rather than guesses.
 ```
  harness events                 daemon                     query
  --------------                 ------                     -----
- Claude Code  |
- hooks        |  emit.sh    inbox/         drain + tick     playtime CLI
- Codex        |----------->  events.jsonl -------------->  sessions.jsonl --> reports
- hooks        |  (~5ms)                    every 15s        live.json     --> statusline
- OpenCode     |                            kill(pid, 0)
- plugin (in-process)
+ Claude Code,  |
+ Codex, Gemini|  emit.sh    inbox/         drain + tick     playtime CLI
+ Qwen, Droid, |----------->  one file ----------------->  sessions.jsonl --> reports
+ Copilot,     |  (~5ms)     per event      every 15s        live.json     --> statusline
+ Goose, Cline |   hooks                    kill(pid, 0)
+ OpenCode, Pi |
+ (in-process plugin or extension)
 ```
 
 Each hook runs a POSIX `sh` shim that stamps a timestamp and appends the payload
@@ -265,6 +307,9 @@ verbatim. It parses nothing and starts no Node process, so it stays out of the
 way of your tool calls. The daemon does the interpreting, starts itself when a
 session opens, and exits two minutes after the last one closes. Nothing to
 manage; if it dies, the next hook brings it back.
+
+Each event lands in the inbox as its own file, renamed into place, so hooks
+firing at once can never tear each other's lines.
 
 It stores intervals rather than samples, one line per session, so years of
 history stay small enough to parse on every command.
@@ -294,7 +339,8 @@ Things it deliberately gets right:
 
 **Blocked time is approximate.** No harness emits an event when you approve a
 permission prompt, so it is measured from the prompt to the completion of the
-tool it gated. That overstates the wait for a long-running tool.
+tool it gated, or to the end of the turn if the tool never runs. That
+overstates the wait for a long-running tool.
 
 **Pid tracking is best on Linux.** The shim walks `/proc` with shell builtins.
 macOS and BSD fall back to `ps`, which is slower, and have no cheap process
@@ -315,7 +361,7 @@ Everything is local. Nothing is sent anywhere.
 ${XDG_DATA_HOME:-~/.local/share}/playtime/
   sessions.jsonl    append-only history, one line per session per checkpoint
   live.json         open sessions, cached totals, daemon checkpoint
-  inbox/            hook drop box, drained every tick
+  inbox/            hook drop box, one file per event, drained every tick
   daemon.lock       single-instance lock
   daemon.log        diagnostics, size capped
 ```

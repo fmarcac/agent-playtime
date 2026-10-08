@@ -176,7 +176,7 @@ test('finalize clips busy time to observed open time', () => {
   assert.equal(total(record.busy), 10 * SECOND);
 });
 
-test('finalize clips blocked time to busy time', () => {
+test('a notification between turns is not a block', () => {
   let state = play(started(), [
     event('blocked_start', 0),
     event('turn_start', 5 * SECOND),
@@ -188,7 +188,24 @@ test('finalize clips blocked time to busy time', () => {
   const record = finalize(state, T0 + 30 * SECOND);
 
   assert.equal(total(record.busy), 5 * SECOND);
-  assert.equal(total(record.blocked), 5 * SECOND);
+  assert.equal(total(record.blocked), 0);
+});
+
+test('the end of a turn closes a wait no tool ever closed', () => {
+  let state = play(started(), [
+    event('turn_start', 0),
+    event('blocked_start', 2 * SECOND),
+    event('turn_end', 6 * SECOND),
+    // The next turn's work before its first tool is not waiting on you.
+    event('turn_start', 10 * SECOND),
+    event('blocked_end', 20 * SECOND),
+    event('turn_end', 25 * SECOND),
+  ]);
+  state = observeAlive(state, T0 + 30 * SECOND, MAX_ADVANCE);
+
+  const record = finalize(state, T0 + 30 * SECOND);
+
+  assert.equal(total(record.blocked), 4 * SECOND);
 });
 
 test('finalize reports the span from first start to last observed moment', () => {

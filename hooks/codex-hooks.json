@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex SessionStart",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex SessionStart",
             "timeout": 3
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex SessionEnd",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex SessionEnd",
             "timeout": 3
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex UserPromptSubmit",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex UserPromptSubmit",
             "timeout": 3
           }
         ]
@@ -39,18 +39,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex Stop",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex Stop",
             "timeout": 3
           }
         ]
       }
     ],
-    "Notification": [
+    "PermissionRequest": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex Notification",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex PermissionRequest",
             "timeout": 3
           }
         ]
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/adapters/shared/emit.sh\" codex PostToolUse",
+            "command": "\"${PLUGIN_ROOT}/adapters/shared/emit.sh\" codex PostToolUse",
             "timeout": 3
           }
         ]

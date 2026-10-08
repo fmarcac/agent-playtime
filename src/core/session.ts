@@ -109,10 +109,20 @@ export function applyEvent(
       return { ...alive, openTurnAt: event.ts, turns: alive.turns + 1 };
 
     case 'turn_end':
-      return { ...alive, busy: closeSpan(alive.busy, alive.openTurnAt, event.ts), openTurnAt: null };
+      // A wait still open when the turn ends, such as a denied permission that
+      // never runs its tool, ends with it rather than leaking into the next turn.
+      return {
+        ...alive,
+        busy: closeSpan(alive.busy, alive.openTurnAt, event.ts),
+        blocked: closeSpan(alive.blocked, alive.openBlockAt, event.ts),
+        openTurnAt: null,
+        openBlockAt: null,
+      };
 
     case 'blocked_start':
-      if (alive.openBlockAt !== null) return alive;
+      // Only a working agent can be waiting on you. A notification between
+      // turns, such as the idle "waiting for your input" one, is not a block.
+      if (alive.openBlockAt !== null || alive.openTurnAt === null) return alive;
       return { ...alive, openBlockAt: event.ts };
 
     case 'blocked_end':

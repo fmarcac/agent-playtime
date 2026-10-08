@@ -1,7 +1,7 @@
-import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { processIsAlive } from '../daemon/proc.js';
+import { processIsAlive, processStartTime } from '../daemon/proc.js';
 import type { Paths } from './paths.js';
 
 export interface LockInfo {
@@ -14,13 +14,28 @@ export interface LockHandle {
   release(): Promise<void>;
 }
 
-export async function readLock(paths: Paths): Promise<LockInfo | null> {
+async function readLockFile(file: string): Promise<LockInfo | null> {
   try {
-    const parsed = JSON.parse(await readFile(paths.lock, 'utf8')) as LockInfo;
+    const parsed = JSON.parse(await readFile(file, 'utf8')) as LockInfo;
     return typeof parsed.pid === 'number' ? parsed : null;
   } catch {
     return null;
   }
+}
+
+export function readLock(paths: Paths): Promise<LockInfo | null> {
+  return readLockFile(paths.lock);
+}
+
+/**
+ * Whether the lock's holder is still the daemon that took it. A pid recycled
+ * after a crash belongs to some other process, which the start time recorded
+ * alongside it gives away.
+ */
+export function holderIsAlive(holder: LockInfo): boolean {
+  if (!processIsAlive(holder.pid)) return false;
+  const started = processStartTime(holder.pid);
+  return started === null || started === holder.startedAt;
 }
 
 /**
@@ -31,7 +46,7 @@ export async function readLock(paths: Paths): Promise<LockInfo | null> {
 export async function acquireLock(
   paths: Paths,
   info: LockInfo,
-  isAlive: (pid: number) => boolean = processIsAlive,
+  isAlive: (holder: LockInfo) => boolean = holderIsAlive,
 ): Promise<LockHandle | null> {
   await mkdir(dirname(paths.lock), { recursive: true });
   const staging = `${paths.lock}.claim.${info.pid}`;
@@ -49,10 +64,28 @@ export async function acquireLock(
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
 
       const holder = await readLock(paths);
-      if (holder && isAlive(holder.pid)) return null;
+      if (holder && isAlive(holder)) return null;
 
-      // The holder is gone, or the lock is unreadable. Either way, reclaim it.
-      await rm(paths.lock, { force: true });
+      // The holder is gone, or the lock is unreadable. Either way, reclaim it,
+      // but by moving it aside first: a rival reclaiming at the same moment may
+      // already have put a fresh lock in its place, and deleting by name would
+      // take theirs and leave two daemons running.
+      const aside = `${paths.lock}.stale.${info.pid}`;
+      try {
+        await rename(paths.lock, aside);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        continue;
+      }
+
+      const moved = await readLockFile(aside);
+      if (moved && isAlive(moved)) {
+        // Not the stale lock after all. Put it back and stand down.
+        await link(aside, paths.lock).catch(() => undefined);
+        await rm(aside, { force: true });
+        return null;
+      }
+      await rm(aside, { force: true });
     } finally {
       await rm(staging, { force: true });
     }

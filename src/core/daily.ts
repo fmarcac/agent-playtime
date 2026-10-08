@@ -21,10 +21,10 @@ export interface DayTotals extends Totals {
 
 /** Local midnight after the day containing `ts`, which is 23 or 25 hours on a DST boundary. */
 export function nextDay(ts: number): number {
+  // Built from the date's parts: where midnight is skipped, the day starts at
+  // 01:00, and carrying that hour forward would key the next day off midnight.
   const date = new Date(ts);
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() + 1);
-  return date.getTime();
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
 }
 
 export function isoDate(ts: number): string {

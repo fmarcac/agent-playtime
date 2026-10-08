@@ -68,7 +68,8 @@ export function renderStatusline(
   const rendered = fill(options.format ?? DEFAULT_STATUSLINE_FORMAT, snapshot, window, count);
 
   // A format the user chose is theirs to fit; only the default is allowed to shrink.
-  const shrinkable = options.format === undefined && options.width !== undefined;
+  const isDefault = options.format === undefined || options.format === DEFAULT_STATUSLINE_FORMAT;
+  const shrinkable = isDefault && options.width !== undefined;
   if (shrinkable && rendered.length > (options.width ?? Infinity)) {
     return fill(NARROW_FORMAT, snapshot, window, count);
   }

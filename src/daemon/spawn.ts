@@ -4,9 +4,9 @@ import { openSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { readLock } from '../store/lock.js';
+
 import type { Paths } from '../store/paths.js';
-import { processIsAlive } from './proc.js';
+import { holderIsAlive, readLock } from '../store/lock.js';
 
 const MAX_LOG_BYTES = 1024 * 1024;
 
@@ -51,7 +51,7 @@ export function daemonRuntime(
  */
 export async function ensureDaemon(paths: Paths): Promise<'running' | 'started'> {
   const holder = await readLock(paths);
-  if (holder && processIsAlive(holder.pid)) return 'running';
+  if (holder && holderIsAlive(holder)) return 'running';
 
   const entrypoint = fileURLToPath(new URL('./main.js', import.meta.url));
   const log = await prepareLog(paths);

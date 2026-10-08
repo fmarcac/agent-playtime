@@ -1,6 +1,17 @@
 /** The normalized event vocabulary every harness adapter must map onto. */
 
-export const HARNESSES = ['claude-code', 'codex', 'opencode'] as const;
+export const HARNESSES = [
+  'claude-code',
+  'codex',
+  'opencode',
+  'pi',
+  'copilot',
+  'gemini',
+  'cline',
+  'qwen',
+  'goose',
+  'droid',
+] as const;
 
 export type Harness = (typeof HARNESSES)[number];
 
@@ -8,7 +19,17 @@ export const HARNESS_LABELS: Record<Harness, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
+  pi: 'Pi',
+  copilot: 'Copilot CLI',
+  gemini: 'Gemini CLI',
+  cline: 'Cline',
+  qwen: 'Qwen Code',
+  goose: 'Goose',
+  droid: 'Factory Droid',
 };
+
+/** The widest label, for columns that line harness names up. */
+export const HARNESS_LABEL_WIDTH = Math.max(...Object.values(HARNESS_LABELS).map((l) => l.length));
 
 export type EventKind =
   | 'session_start'

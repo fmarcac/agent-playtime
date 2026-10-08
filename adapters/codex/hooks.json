@@ -45,12 +45,12 @@
         ]
       }
     ],
-    "Notification": [
+    "PermissionRequest": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "__EMIT__ codex Notification",
+            "command": "__EMIT__ codex PermissionRequest",
             "timeout": 3
           }
         ]

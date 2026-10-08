@@ -12,49 +12,8 @@ import { resolvePaths } from '../../store/paths.js';
 import { ensureDaemon } from '../../daemon/spawn.js';
 import { processStartTime } from '../../daemon/proc.js';
 import type { Envelope } from '../../core/events.js';
-
-/** OpenCode event names Playtime cares about, mapped to the shim's hook vocabulary. */
-const DIRECT_EVENTS: Record<string, string> = {
-  'session.created': 'session.created',
-  'session.idle': 'session.idle',
-  'session.deleted': 'session.deleted',
-  'permission.asked': 'permission.asked',
-  'permission.replied': 'permission.replied',
-};
-
-interface OpenCodeEvent {
-  type?: string;
-  properties?: Record<string, unknown>;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-/** OpenCode nests identifiers differently per event, so probe the shapes it uses. */
-function readSessionId(properties: Record<string, unknown>): string | undefined {
-  const info = asRecord(properties['info']);
-  const candidates = [
-    properties['sessionID'],
-    properties['sessionId'],
-    info['sessionID'],
-    info['sessionId'],
-    info['id'],
-  ];
-
-  return candidates.find((value): value is string => typeof value === 'string' && value !== '');
-}
-
-function isUserPrompt(event: OpenCodeEvent): boolean {
-  if (event.type !== 'message.updated') return false;
-  const info = asRecord(asRecord(event.properties)['info']);
-  return info['role'] === 'user';
-}
-
-export function hookNameFor(event: OpenCodeEvent): string | null {
-  if (isUserPrompt(event)) return 'user.prompt';
-  return DIRECT_EVENTS[event.type ?? ''] ?? null;
-}
+import { asRecord, hookNameFor, readSessionId } from './events.js';
+import type { OpenCodeEvent } from './events.js';
 
 export interface PluginContext {
   directory?: string;
@@ -65,7 +24,10 @@ export const PlaytimePlugin = async (context: PluginContext = {}) => {
   const paths = resolvePaths();
   const pid = process.pid;
   const pidStart = processStartTime(pid);
-  const directory = context.worktree ?? context.directory ?? process.cwd();
+  // The worktree names the whole repository, but outside one OpenCode reports
+  // it as `/`, and then the directory it was opened in is the better name.
+  const worktree = context.worktree && context.worktree !== '/' ? context.worktree : undefined;
+  const directory = worktree ?? context.directory ?? process.cwd();
 
   await ensureDaemon(paths).catch(() => undefined);
 
@@ -73,6 +35,13 @@ export const PlaytimePlugin = async (context: PluginContext = {}) => {
     event: async ({ event }: { event: OpenCodeEvent }): Promise<void> => {
       const hook = hookNameFor(event);
       if (hook === null) return;
+
+      // The daemon exits when idle, which can happen between opening OpenCode
+      // and the first prompt, and it can die. Like the shell hooks, every
+      // session or prompt event brings it back.
+      if (hook === 'session.created' || hook === 'user.prompt') {
+        void ensureDaemon(paths).catch(() => undefined);
+      }
 
       const sessionId = readSessionId(asRecord(event.properties));
       if (sessionId === undefined) return;

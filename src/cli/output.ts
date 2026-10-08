@@ -269,8 +269,21 @@ export function pick(document: unknown, path: string): unknown {
   return current;
 }
 
+const DURATIONS: ReadonlySet<string> = new Set([
+  'open',
+  'busy',
+  'blocked',
+  'sessionTime',
+  'busyStacked',
+  'blockedStacked',
+]);
+
 function fieldText(value: unknown, options: OutputOptions): string {
-  if (typeof value === 'number' && options.units !== undefined) {
+  // Rows arrive already converted; on the raw rollup only durations take units,
+  // never a count or a timestamp.
+  const leaf = (options.field ?? '').split('.').pop() ?? '';
+  const convert = options.shape === undefined && DURATIONS.has(leaf);
+  if (typeof value === 'number' && options.units !== undefined && convert) {
     return String(formatUnits(value, options.units));
   }
   if (value === null) return '';

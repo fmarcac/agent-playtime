@@ -15,6 +15,7 @@ import { appendFile } from 'node:fs/promises';
 
 import { drainInbox } from '../store/inbox.js';
 import { readLive, writeLive } from '../store/live.js';
+import { readLock } from '../store/lock.js';
 import type { LiveSessionSummary, LiveSnapshot } from '../store/live.js';
 import type { Paths } from '../store/paths.js';
 import { repairSessions } from '../store/repair.js';
@@ -86,7 +87,8 @@ export class Daemon {
   readonly #config: DaemonConfig;
   readonly #deps: DaemonDeps;
   readonly #tracker: Tracker;
-  readonly #history: SessionRecord[];
+  /** Settled sessions keyed by `id#start`, so a later copy of a session replaces its checkpoint. */
+  readonly #history: Map<string, SessionRecord>;
   #emptySince: number | null = null;
   #lastCheckpoint = 0;
 
@@ -95,7 +97,7 @@ export class Daemon {
     config: DaemonConfig,
     deps: DaemonDeps,
     tracker: Tracker,
-    history: SessionRecord[],
+    history: Map<string, SessionRecord>,
   ) {
     this.#paths = paths;
     this.#config = config;
@@ -110,7 +112,7 @@ export class Daemon {
     // Failing to tidy is never a reason not to track.
     await repairSessions(paths).catch(() => undefined);
 
-    const history = (await readSessions(paths)).items;
+    const history = new Map((await readSessions(paths)).items.map((record) => [keyOf(record), record]));
 
     const tracker = new Tracker({
       maxAdvanceMs: config.maxAdvanceMs,
@@ -167,8 +169,8 @@ export class Daemon {
    * Without this, a session's hours live only in the snapshot until it closes,
    * so losing that one file loses an entire day of a long session.
    */
-  async #checkpoint(now: number): Promise<void> {
-    if (now - this.#lastCheckpoint < this.#config.checkpointEveryMs) return;
+  async #checkpoint(now: number, force = false): Promise<void> {
+    if (!force && now - this.#lastCheckpoint < this.#config.checkpointEveryMs) return;
     this.#lastCheckpoint = now;
 
     const open = this.#tracker.live().map((state) => finalize(state, state.lastAlive));
@@ -194,6 +196,10 @@ export class Daemon {
   /**
    * The last writes of all, and the ones that save whatever is still open.
    *
+   * Open sessions are checkpointed, not ended: the harnesses are still running,
+   * and the snapshot keeps them in `tracking` so a successor resumes them as the
+   * same sessions rather than starting second copies on their next hook.
+   *
    * Guarded separately and in that order: history is what the hours live in,
    * and a snapshot that cannot be written must not stop it being flushed. An
    * unguarded throw here escapes runDaemon entirely, which is how a transient
@@ -203,7 +209,7 @@ export class Daemon {
     const now = this.#deps.now();
 
     try {
-      await this.#record(this.#tracker.closeAll(now));
+      await this.#checkpoint(now, true);
     } catch (error) {
       await this.#report('shutdown', error);
     }
@@ -218,7 +224,7 @@ export class Daemon {
   async #record(closed: readonly SessionRecord[]): Promise<void> {
     if (closed.length === 0) return;
     await appendSessions(this.#paths, closed);
-    this.#history.push(...closed);
+    for (const record of closed) this.#history.set(keyOf(record), record);
   }
 
   async #writeSnapshot(now: number): Promise<void> {
@@ -231,10 +237,8 @@ export class Daemon {
     // A session still open may already have a checkpoint sitting in history from
     // an earlier daemon. The live copy is the newer of the two, so drop the
     // stored one rather than counting the session twice.
-    const superseded = new Set(provisional.map((record) => `${record.id}#${record.start}`));
-    const settled = this.#history.filter(
-      (record) => !superseded.has(`${record.id}#${record.start}`),
-    );
+    const superseded = new Set(provisional.map(keyOf));
+    const settled = [...this.#history.values()].filter((record) => !superseded.has(keyOf(record)));
 
     const everything = [...settled, ...provisional];
 
@@ -251,6 +255,10 @@ export class Daemon {
 
     await writeLive(this.#paths, snapshot);
   }
+}
+
+function keyOf(record: SessionRecord): string {
+  return `${record.id}#${record.start}`;
 }
 
 function summarize(state: SessionState, record: SessionRecord | undefined): LiveSessionSummary {
@@ -303,6 +311,10 @@ export async function runDaemon(
   while (!signal?.aborted) {
     await daemon.tick();
     if (daemon.shouldExit) break;
+    // Two daemons can only coexist after a lock race; the one that no longer
+    // holds the lock stands down rather than double-counting.
+    const holder = deps.pid === undefined ? null : await readLock(paths).catch(() => null);
+    if (holder && holder.pid !== deps.pid) break;
     await sleep(config.tickMs, signal);
   }
 

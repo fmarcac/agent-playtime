@@ -162,3 +162,13 @@ test('Codex hooks stay inside the timeout it will accept', () => {
     }
   }
 });
+
+test('merging keeps hooks that have no command, such as prompt hooks', () => {
+  const existing = {
+    Stop: [{ hooks: [{ type: 'prompt', prompt: 'check' }] }],
+  } as unknown as HookMap;
+
+  const merged = mergeHooks(existing, playtimeHooks(EMIT, 'claude-code'));
+  assert.equal(merged['Stop']?.length, 2);
+  assert.deepEqual(merged['Stop']?.[0], { hooks: [{ type: 'prompt', prompt: 'check' }] });
+});

@@ -81,8 +81,11 @@ export function windowFor(kind: WindowKind, now: number): Interval | null {
       return null;
     case 'today':
       return [startOfDay(now), now];
-    case 'week':
-      return [startOfDay(now) - 6 * DAY, now];
+    case 'week': {
+      // Calendar days, not 144 hours, so a DST change cannot shift it off midnight.
+      const date = new Date(now);
+      return [new Date(date.getFullYear(), date.getMonth(), date.getDate() - 6).getTime(), now];
+    }
     case 'month':
       return [startOfMonth(now), now];
     case 'year':

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { renderStatusline, statuslineJson } from './statusline.js';
+import { DEFAULT_STATUSLINE_FORMAT, renderStatusline, statuslineJson } from './statusline.js';
 import type { LiveSnapshot } from '../store/live.js';
 import type { Totals } from '../core/rollup.js';
 
@@ -131,4 +131,9 @@ test('stacked mode reports summed time rather than deduplicated time', () => {
 
   assert.equal(renderStatusline(stacked, { count: 'wallclock' }), '1h00m open · 30m busy');
   assert.equal(renderStatusline(stacked, { count: 'stacked' }), '3h00m open · 1h30m busy');
+});
+
+test('the default format shrinks even when passed explicitly from settings', () => {
+  const line = renderStatusline(snapshot(), { format: DEFAULT_STATUSLINE_FORMAT, width: 5 });
+  assert.equal(line.includes('busy'), false);
 });

@@ -28,7 +28,7 @@ export type Command =
   | { kind: 'statusline'; format: string | undefined; width: number | undefined; json: boolean }
   | { kind: 'doctor' }
   | { kind: 'repair'; dryRun: boolean }
-  | { kind: 'install'; harnesses: Harness[]; dryRun: boolean }
+  | { kind: 'install'; harnesses: Harness[]; dryRun: boolean; onlyFound: boolean }
   | { kind: 'daemon'; foreground: boolean }
   | { kind: 'help' }
   | { kind: 'version' }
@@ -316,10 +316,10 @@ export function parseCommand(argv: readonly string[], now: number = Date.now()):
     case 'install': {
       const harness = values.get('--harness');
       if (harness === undefined) {
-        return { kind: 'install', harnesses: [...HARNESSES], dryRun };
+        return { kind: 'install', harnesses: [...HARNESSES], dryRun, onlyFound: true };
       }
       if (!isHarness(harness)) return fail(`unknown harness ${harness}`);
-      return { kind: 'install', harnesses: [harness], dryRun };
+      return { kind: 'install', harnesses: [harness], dryRun, onlyFound: false };
     }
   }
 

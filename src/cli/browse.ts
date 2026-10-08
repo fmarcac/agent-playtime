@@ -36,18 +36,34 @@ export function step(key: Key): number {
   return 0;
 }
 
+/** Terminal rows a block takes, counting lines the terminal wraps. */
+export function screenRows(text: string, columns: number): number {
+  const lines = text.split('\n');
+  lines.pop();
+  let rows = 0;
+  for (const line of lines) {
+    const width = [...line.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')].length;
+    rows += Math.max(1, Math.ceil(width / columns));
+  }
+  return rows;
+}
+
 export async function runBrowse(options: BrowseOptions): Promise<number> {
   const windows = options.windows;
   let at = Math.max(0, windows.indexOf(options.window));
   let drawn = 0;
 
   const render = (): void => {
-    // Step back over the block just written and clear from there down.
-    if (drawn > 0) process.stdout.write(`${ESC}[${drawn}A${ESC}[0J`);
+    // Step back over the block just written and clear from there down. The
+    // cursor cannot climb above the top of the screen, so a block taller than
+    // the terminal is redrawn on a cleared screen instead.
+    const rows = process.stdout.rows ?? Infinity;
+    if (drawn >= rows) process.stdout.write(`${ESC}[H${ESC}[2J`);
+    else if (drawn > 0) process.stdout.write(`${ESC}[${drawn}A${ESC}[0J`);
 
     const text = options.draw(windows[at] ?? options.window);
     process.stdout.write(text);
-    drawn = text.split('\n').length - 1;
+    drawn = screenRows(text, process.stdout.columns ?? Infinity);
   };
 
   emitKeypressEvents(process.stdin);

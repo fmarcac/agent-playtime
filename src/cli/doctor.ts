@@ -1,18 +1,19 @@
 /** Health checks, so a silent tracker can be diagnosed rather than guessed at. */
 
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
 import { HARNESSES, HARNESS_LABELS } from '../core/events.js';
 import type { Harness } from '../core/events.js';
 import { formatDuration, formatRelative } from '../core/format.js';
 import { processIsAlive } from '../daemon/proc.js';
+import { pendingInbox } from '../store/inbox.js';
 import { readLive } from '../store/live.js';
 import { readLock } from '../store/lock.js';
 import type { Paths } from '../store/paths.js';
 import { inspectSessions } from '../store/repair.js';
 import type { RepairReport } from '../store/repair.js';
-import { installTarget, wiringFor } from './install.js';
+import { harnessPresent, installTarget, wiredFile, wiringFor, wiringNoun } from './install.js';
 
 export interface Check {
   name: string;
@@ -77,18 +78,24 @@ export function referencedPath(contents: string, harness: Harness): string | nul
   // A hook command is a string inside a JSON string, so the quotes around the
   // path are backslash-escaped and matching on them finds nothing. Match the
   // path itself: everything up to emit.sh that cannot be part of the quoting.
-  const pattern = harness === 'opencode' ? /from\s+"([^"]+)"/ : /([^"\\\s]*emit\.sh)/;
+  // OpenCode and Pi load a module, so theirs is named in a re-export.
+  const pattern =
+    harness === 'opencode' || harness === 'pi' ? /from\s+"([^"]+)"/ : /([^"\\\s]*emit\.sh)/;
   return pattern.exec(contents)?.[1] ?? null;
 }
 
-async function checkHarness(harness: Harness): Promise<Check> {
-  const target = installTarget(harness);
-  const kind = harness === 'opencode' ? 'plugin' : 'hooks';
+export async function checkHarness(
+  harness: Harness,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<Check> {
+  const target = installTarget(harness, env);
+  const kind = wiringNoun(harness);
   const name = `${HARNESS_LABELS[harness]} ${kind}`;
-  const { marker, expected } = wiringFor(harness);
+  const { marker, expected, executable } = wiringFor(harness);
   const retry = `run \`playtime install --harness ${harness}\``;
 
-  const contents = await readFile(target, 'utf8').catch(() => null);
+  // Cline and Goose spread their wiring over several files; one of them speaks for all.
+  const contents = await readFile(wiredFile(harness, env), 'utf8').catch(() => null);
   if (contents === null) {
     return { name, status: 'warn', detail: `no ${kind} at ${target}, ${retry}` };
   }
@@ -107,7 +114,7 @@ async function checkHarness(harness: Harness): Promise<Check> {
   }
 
   // A shell hook has to be executable; a module only has to be readable.
-  const needed = harness === 'opencode' ? constants.R_OK : constants.X_OK;
+  const needed = executable ? constants.X_OK : constants.R_OK;
   const usable = await access(referenced ?? expected, needed).then(
     () => true,
     () => false,
@@ -159,10 +166,7 @@ async function checkHistory(paths: Paths, now: number): Promise<Check> {
 }
 
 async function checkInbox(paths: Paths): Promise<Check> {
-  const size = await stat(paths.inbox).then(
-    (info) => info.size,
-    () => 0,
-  );
+  const { bytes: size } = await pendingInbox(paths);
 
   // The daemon drains every tick, so a large inbox means nothing is draining it.
   if (size > 512 * 1024) {
@@ -176,11 +180,26 @@ async function checkInbox(paths: Paths): Promise<Check> {
   return { name: 'inbox', status: 'ok', detail: size === 0 ? 'empty' : `${size} bytes pending` };
 }
 
+/**
+ * One check per harness that is installed here or already wired up. A harness
+ * the machine has never had is not a problem worth a warning, and install
+ * would only answer "not found" to the advice to run it.
+ */
+async function harnessChecks(env: NodeJS.ProcessEnv = process.env): Promise<Check[]> {
+  const relevant = await Promise.all(
+    HARNESSES.map(async (harness) =>
+      (await harnessPresent(harness, env)) ||
+      (await access(wiredFile(harness, env)).then(() => true, () => false)),
+    ),
+  );
+  return Promise.all(HARNESSES.filter((_, index) => relevant[index]).map((harness) => checkHarness(harness, env)));
+}
+
 export async function runDoctor(paths: Paths, now: number): Promise<Check[]> {
   return [
     await checkDataDirectory(paths),
     await checkDaemon(paths, now),
-    ...(await Promise.all(HARNESSES.map(checkHarness))),
+    ...(await harnessChecks()),
     await checkHistory(paths, now),
     await checkInbox(paths),
   ];

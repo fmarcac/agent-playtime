@@ -118,9 +118,11 @@ export function carryOver(read: string, current: string): string | null {
 /**
  * Rewrites history in place, keeping a backup.
  *
- * Safe to run while the daemon is up: the daemon only ever appends, so anything
- * that lands mid-repair is at the end of the file and is carried across
- * untouched. If the part we read has changed underneath us, nothing is written.
+ * Mostly safe to run while the daemon is up: the daemon only ever appends, so
+ * anything that lands mid-repair is at the end of the file and is carried
+ * across untouched. If the part we read has changed underneath us, nothing is
+ * written. The backup is taken before the final read, which leaves only the
+ * atomic write itself as a window where an append could be missed.
  */
 export async function repairSessions(paths: Paths): Promise<RepairReport> {
   const text = await readFile(paths.sessions, 'utf8').catch((error: unknown) => {
@@ -131,14 +133,15 @@ export async function repairSessions(paths: Paths): Promise<RepairReport> {
   const result = compact(text);
   if (result.unreadable === 0 && result.superseded === 0) return nothingToDo(result);
 
+  const backup = `${paths.sessions}.playtime-backup`;
+  await copyFile(paths.sessions, backup).catch(() => undefined);
+
   const current = await readFile(paths.sessions, 'utf8').catch(() => '');
   const tail = carryOver(text, current);
   if (tail === null) {
     throw new Error('history changed while it was being repaired, nothing was written');
   }
 
-  const backup = `${paths.sessions}.playtime-backup`;
-  await copyFile(paths.sessions, backup).catch(() => undefined);
   await writeAtomic(paths.sessions, toJsonl(result.records) + tail);
 
   return {

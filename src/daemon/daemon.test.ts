@@ -248,7 +248,7 @@ test('a busy daemon never asks to exit', async () => {
   });
 });
 
-test('shutdown flushes sessions that were still open', async () => {
+test('shutdown flushes sessions that were still open and hands them on', async () => {
   await withTempHome(async (paths) => {
     const clock = fakeClock(T0);
     const daemon = await Daemon.start(paths, CONFIG, { now: clock.now, isAlive: ALIVE });
@@ -263,8 +263,9 @@ test('shutdown flushes sessions that were still open', async () => {
     assert.equal(stored.items.length, 1);
     assert.equal(total(stored.items[0]?.open ?? []), TICK);
 
+    // The harness is still running, so a successor resumes the same session.
     const live = await readLive(paths);
-    assert.deepEqual(live?.tracking, []);
+    assert.equal(live?.tracking.length, 1);
   });
 });
 

@@ -30,7 +30,8 @@ esac
 payload=$(tr -d '\n\r' 2>/dev/null)
 [ -n "$payload" ] || payload='{}'
 
-# Walk up to the harness process. Everything here is a shell builtin, so no
+# Walk up to the harness process. Node 26 reports its comm as `node-MainThread`,
+# hence `node*`. Everything here is a shell builtin, so no
 # subprocesses are spawned on the fast path.
 harness_pid=''
 harness_pid_start=''
@@ -49,12 +50,12 @@ if [ -d /proc ]; then
     # The comm field can contain spaces and parentheses, so split after the
     # last ')'. What remains starts at field 3, making $2 the parent pid and
     # ${20} the start time (fields 4 and 22 of the original).
-    set -- ${statline#*") "}
+    set -- ${statline##*") "}
     parent="${2:-}"
     start="${20:-}"
 
     case "$comm" in
-      claude | claude-code | codex | opencode | node | bun | deno)
+      claude | claude-code | codex | opencode | node* | bun | deno | gemini | copilot | qwen | goose* | droid | pi | cline | .cline | clite | .clite)
         harness_pid="$pid"
         harness_pid_start="$start"
         break
@@ -72,13 +73,19 @@ else
     line=$(ps -o ppid=,comm= -p "$pid" 2>/dev/null) || break
     [ -n "$line" ] || break
     set -- $line
-    case "${2:-}" in
-      *claude* | *codex* | *opencode* | *node* | *bun* | *deno*)
+    parent="${1:-}"
+    shift
+    # ps may print the full executable path; match its last component exactly,
+    # as the /proc walk does, so an ancestor merely containing "pi" never wins.
+    name="$*"
+    name="${name##*/}"
+    case "$name" in
+      claude | claude-code | codex | opencode | node* | bun | deno | gemini | copilot | qwen | goose* | droid | pi | cline | .cline | clite | .clite)
         harness_pid="$pid"
         break
         ;;
     esac
-    pid="${1:-}"
+    pid="$parent"
     depth=$((depth + 1))
   done
 fi
@@ -95,8 +102,15 @@ fi
 
 [ -d "$inbox" ] || mkdir -p "$inbox" 2>/dev/null
 
-printf '{"v":1,"ts":%s,"harness":"%s","hook":"%s"%s,"payload":%s}\n' \
-  "$ts" "$harness" "$hook" "$identity" "$payload" >> "$inbox/events.jsonl" 2>/dev/null
+# One file per event. Concurrent hooks appending to one shared file can tear
+# each other's lines, since a large payload is not written in one go. A rename
+# is atomic, and the daemon skips dot-files, so it only ever sees whole events.
+event="$ts.$$"
+if printf '{"v":1,"ts":%s,"harness":"%s","hook":"%s"%s,"payload":%s}\n' \
+  "$ts" "$harness" "$hook" "$identity" "$payload" > "$inbox/.$event.tmp" 2>/dev/null; then
+  mv -f "$inbox/.$event.tmp" "$inbox/$event.json" 2>/dev/null
+fi
+rm -f "$inbox/.$event.tmp" 2>/dev/null
 
 # Keep the daemon up. Checking the lock is builtin-only, and starting it again
 # is harmless because the daemon itself enforces single instance. This makes the
@@ -114,6 +128,16 @@ if [ -r "$lock" ]; then
     esac
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
       running=1
+      # A pid recycled after a crash is not our daemon. Compare start times
+      # where /proc has them; the lock records the same field.
+      locked_start=${lockline#*\"startedAt\":}
+      locked_start=${locked_start%%,*}
+      locked_start=${locked_start%%\}*}
+      statline=''
+      if [ -r "/proc/$pid/stat" ] && read -r statline < "/proc/$pid/stat" 2>/dev/null; then
+        set -- ${statline##*") "}
+        [ "${20:-}" = "$locked_start" ] || running=''
+      fi
     fi
   fi
 fi
@@ -123,6 +147,10 @@ if [ -z "$running" ]; then
   if [ -r "$main" ]; then
     PLAYTIME_HOME="$home" nohup "${PLAYTIME_NODE:-node}" "$main" \
       >> "$home/daemon.log" 2>&1 &
+  elif command -v playtime >/dev/null 2>&1; then
+    # A plugin installed from a git checkout has no build of its own, so fall
+    # back to the npm-installed CLI.
+    PLAYTIME_HOME="$home" nohup playtime daemon >> "$home/daemon.log" 2>&1 &
   fi
 fi
 

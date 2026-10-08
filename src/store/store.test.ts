@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -280,7 +280,7 @@ test('a lock left behind by a killed daemon is reclaimed', async () => {
     const first = await acquireLock(paths, { pid: 1, startedAt: 100 }, () => true);
     assert.ok(first);
 
-    const second = await acquireLock(paths, { pid: 2, startedAt: 200 }, (pid) => pid !== 1);
+    const second = await acquireLock(paths, { pid: 2, startedAt: 200 }, (holder) => holder.pid !== 1);
 
     assert.ok(second);
     assert.deepEqual(await readLock(paths), { pid: 2, startedAt: 200 });
@@ -327,7 +327,7 @@ test('a lock file is never visible before it has been written', async () => {
 test('releasing a lock that another daemon has since taken leaves theirs alone', async () => {
   await withTempHome(async (paths) => {
     const first = await acquireLock(paths, { pid: 1, startedAt: 100 }, () => true);
-    const second = await acquireLock(paths, { pid: 2, startedAt: 200 }, (pid) => pid !== 1);
+    const second = await acquireLock(paths, { pid: 2, startedAt: 200 }, (holder) => holder.pid !== 1);
 
     await first?.release();
 
@@ -382,5 +382,67 @@ test('a session id reused by a later run is kept separate', async () => {
     const result = await readSessions(paths);
 
     assert.equal(result.items.length, 2);
+  });
+});
+
+test('an append after a truncated line costs only the truncated line', async () => {
+  await withTempHome(async (paths) => {
+    await writeFile(paths.sessions, '{"id":"a","start":1,"op');
+    await appendJsonl(paths.sessions, [{ id: 'b' }, { id: 'c' }]);
+
+    const read = await readJsonl<{ id: string }>(paths.sessions);
+    assert.deepEqual(read.items.map((item) => item.id), ['b', 'c']);
+    assert.equal(read.corrupt, 1);
+  });
+});
+
+test('the inbox drains one file per event, oldest first, alongside a legacy file', async () => {
+  await withTempHome(async (paths) => {
+    await appendEnvelope(paths, envelope('Stop', 300));
+    await appendEnvelope(paths, envelope('SessionStart', 100));
+    await mkdir(dirname(paths.inbox), { recursive: true });
+    await writeFile(paths.inbox, `${JSON.stringify(envelope('UserPromptSubmit', 200))}\n`);
+    // A writer still filling its file is left alone.
+    await writeFile(join(dirname(paths.inbox), '.400.1.tmp'), '{"half');
+
+    const drained = await drainInbox(paths);
+    assert.deepEqual(drained.items.map((item) => item.hook), ['SessionStart', 'UserPromptSubmit', 'Stop']);
+    assert.equal(drained.corrupt, 0);
+    assert.equal((await drainInbox(paths)).items.length, 0);
+  });
+});
+
+test('a lock whose holder pid was recycled is reclaimed', async () => {
+  await withTempHome(async (paths) => {
+    await acquireLock(paths, { pid: 1, startedAt: 100 }, () => true);
+    // pid 1 is running, but it is not the process that took the lock.
+    const second = await acquireLock(paths, { pid: 2, startedAt: 200 }, (holder) => holder.startedAt !== 100);
+    assert.equal((await readLock(paths))?.pid, 2);
+    assert.notEqual(second, null);
+  });
+});
+
+test('events written within one millisecond drain in the order they were written', async () => {
+  await withTempHome(async (paths) => {
+    await Promise.all([
+      appendEnvelope(paths, envelope('Stop', 500)),
+      appendEnvelope(paths, envelope('UserPromptSubmit', 500)),
+      appendEnvelope(paths, envelope('PostToolUse', 500)),
+    ]);
+
+    const drained = await drainInbox(paths);
+    assert.deepEqual(drained.items.map((item) => item.hook), ['Stop', 'UserPromptSubmit', 'PostToolUse']);
+  });
+});
+
+test('an event file that cannot be read stays for the next drain', async () => {
+  await withTempHome(async (paths) => {
+    await appendEnvelope(paths, envelope('SessionStart', 100));
+    // A directory with an event's name cannot be read as a file.
+    await mkdir(join(dirname(paths.inbox), '50.1.000000001.json'), { recursive: true });
+
+    const drained = await drainInbox(paths);
+    assert.equal(drained.items.length, 1);
+    await assert.doesNotReject(readdir(join(dirname(paths.inbox), '50.1.000000001.json')));
   });
 });
