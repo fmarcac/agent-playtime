@@ -302,3 +302,17 @@ test('Pi forwards its own event names', () => {
   assert.equal(pi('tool_call'), null);
   assert.equal(pi('session_start')?.cwd, '/w');
 });
+
+test('Oh My Pi forwards its own event names', () => {
+  const omp = (hook: string) => normalizeEnvelope(envelope('omp', hook, { sessionId: 'o1', cwd: '/w' }));
+
+  assert.equal(omp('session_start')?.event, 'session_start');
+  assert.equal(omp('session_shutdown')?.event, 'session_end');
+  assert.equal(omp('before_agent_start')?.event, 'turn_start');
+  assert.equal(omp('agent_start')?.event, 'turn_start');
+  assert.equal(omp('agent_end')?.event, 'turn_end');
+  assert.equal(omp('tool_approval_requested')?.event, 'blocked_start');
+  assert.equal(omp('tool_approval_resolved')?.event, 'blocked_end');
+  assert.equal(omp('agent_settled'), null);
+  assert.equal(omp('session_start')?.harness, 'omp');
+});

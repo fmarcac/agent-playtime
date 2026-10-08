@@ -1,5 +1,5 @@
 /**
- * Pi extension.
+ * Pi extension, shared with Oh My Pi.
  *
  * Pi loads extensions in-process and awaits every handler in order, so a slow
  * handler slows the agent. Each handler therefore builds its envelope
@@ -15,12 +15,14 @@ import { appendEnvelope } from '../../store/inbox.js';
 import { resolvePaths } from '../../store/paths.js';
 import { ensureDaemon } from '../../daemon/spawn.js';
 import { processStartTime } from '../../daemon/proc.js';
-import type { Envelope } from '../../core/events.js';
+import type { Envelope, Harness } from '../../core/events.js';
 
 /** The slice of Pi's extension context this uses, typed structurally to avoid a dependency. */
 export interface PiContext {
   cwd?: string;
   sessionManager?: { getSessionId?: () => string };
+  /** Oh My Pi only: which agent the session runs, the top-level one or a subagent. */
+  agent?: { kind?: string };
 }
 
 export interface PiApi {
@@ -37,37 +39,57 @@ export const PI_EVENTS = [
   'ui_prompt_end',
 ] as const;
 
-/** Events that should also bring a dead daemon back, like the shell hooks do. */
-const WAKES_DAEMON: ReadonlySet<string> = new Set(['session_start', 'before_agent_start']);
-
-export default function playtimeExtension(pi: PiApi): void {
-  // Looked up on first use, not in the factory, so loading the extension does no work.
-  let pidStart: number | null | undefined;
-
-  for (const name of PI_EVENTS) {
-    pi.on(name, (_event, ctx) => {
-      try {
-        const sessionId = ctx?.sessionManager?.getSessionId?.();
-        if (typeof sessionId !== 'string' || sessionId === '') return;
-
-        const paths = resolvePaths();
-        if (pidStart === undefined) pidStart = processStartTime(process.pid);
-
-        const envelope: Envelope = {
-          v: 1,
-          ts: Date.now(),
-          harness: 'pi',
-          hook: name,
-          pid: process.pid,
-          pidStart: pidStart ?? undefined,
-          payload: { sessionId, cwd: ctx.cwd },
-        };
-
-        appendEnvelope(paths, envelope).catch(() => undefined);
-        if (WAKES_DAEMON.has(name)) ensureDaemon(paths).catch(() => undefined);
-      } catch {
-        // Never let a tracker failure escape into Pi.
-      }
-    });
-  }
+export interface ExtensionSpec {
+  harness: Harness;
+  events: readonly string[];
+  /** Events that should also bring a dead daemon back, like the shell hooks do. */
+  wakes: readonly string[];
+  /** Returns false for an event that should not be recorded. */
+  accept?: (name: string, event: unknown, ctx: PiContext) => boolean;
 }
+
+/** Builds an extension factory for Pi or a harness that shares its extension API. */
+export function createExtension(spec: ExtensionSpec): (pi: PiApi) => void {
+  const wakes: ReadonlySet<string> = new Set(spec.wakes);
+
+  return (pi) => {
+    // Looked up on first use, not in the factory, so loading the extension does no work.
+    let pidStart: number | null | undefined;
+
+    for (const name of spec.events) {
+      pi.on(name, (event, ctx) => {
+        try {
+          const sessionId = ctx?.sessionManager?.getSessionId?.();
+          if (typeof sessionId !== 'string' || sessionId === '') return;
+          if (spec.accept !== undefined && !spec.accept(name, event, ctx)) return;
+
+          const paths = resolvePaths();
+          if (pidStart === undefined) pidStart = processStartTime(process.pid);
+
+          const envelope: Envelope = {
+            v: 1,
+            ts: Date.now(),
+            harness: spec.harness,
+            hook: name,
+            pid: process.pid,
+            pidStart: pidStart ?? undefined,
+            payload: { sessionId, cwd: ctx.cwd },
+          };
+
+          appendEnvelope(paths, envelope).catch(() => undefined);
+          if (wakes.has(name)) ensureDaemon(paths).catch(() => undefined);
+        } catch {
+          // Never let a tracker failure escape into the harness.
+        }
+      });
+    }
+  };
+}
+
+const playtimeExtension = createExtension({
+  harness: 'pi',
+  events: PI_EVENTS,
+  wakes: ['session_start', 'before_agent_start'],
+});
+
+export default playtimeExtension;

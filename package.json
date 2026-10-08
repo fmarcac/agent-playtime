@@ -1,12 +1,13 @@
 {
   "name": "agent-playtime",
-  "version": "0.4.0",
-  "description": "Steam-style playtime tracking for CLI agent harnesses: Claude Code, Codex, OpenCode, Pi, Copilot CLI, Gemini CLI, Cline, Qwen Code, Goose and Factory Droid",
+  "version": "0.4.1",
+  "description": "Steam-style playtime tracking for CLI agent harnesses: Claude Code, Codex, OpenCode, Pi, Oh My Pi, Copilot CLI, Gemini CLI, Cline, Qwen Code, Goose and Factory Droid",
   "keywords": [
     "claude-code",
     "codex",
     "opencode",
     "pi",
+    "oh-my-pi",
     "copilot",
     "gemini-cli",
     "cline",
@@ -41,6 +42,7 @@
     "./server": "./dist/index.js",
     "./opencode": "./dist/adapters/opencode/plugin.js",
     "./pi": "./dist/adapters/pi/extension.js",
+    "./omp": "./dist/adapters/omp/extension.js",
     "./lib": "./dist/lib.js"
   },
   "files": [

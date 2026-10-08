@@ -1,7 +1,8 @@
 # Playtime
 
 Steam-style playtime tracking for CLI agent harnesses: Claude Code, Codex,
-OpenCode, Pi, Copilot CLI, Gemini CLI, Cline, Qwen Code, Goose and Factory Droid.
+OpenCode, Pi, Oh My Pi, Copilot CLI, Gemini CLI, Cline, Qwen Code, Goose and Factory
+Droid.
 
 Steam tells you that you have 412 hours in a game and which ones you played this
 week. Nothing does that for agent harnesses. Playtime does.
@@ -48,7 +49,7 @@ file first, and skips any whose config directory does not exist. Restart running
 `--harness codex`, or preview with `--dry-run`.
 
 Every harness has a manual route, `playtime install --harness <id>`, with `<id>`
-one of `claude-code`, `codex`, `opencode`, `pi`, `copilot`, `gemini`, `cline`,
+one of `claude-code`, `codex`, `opencode`, `pi`, `omp`, `copilot`, `gemini`, `cline`,
 `qwen`, `goose` or `droid`. Three can also be installed from inside the harness:
 
 | Harness | From within the harness | Manual |
@@ -57,6 +58,7 @@ one of `claude-code`, `codex`, `opencode`, `pi`, `copilot`, `gemini`, `cline`,
 | Codex | `/plugin marketplace add fmarcac/agent-playtime` then `/plugin install playtime@playtime` | `playtime install --harness codex` |
 | OpenCode | add `"plugin": ["agent-playtime"]` to `opencode.json` | `playtime install --harness opencode` |
 | Pi | | `playtime install --harness pi` |
+| Oh My Pi | | `playtime install --harness omp` |
 | Copilot CLI | | `playtime install --harness copilot` |
 | Gemini CLI | | `playtime install --harness gemini` |
 | Cline | | `playtime install --harness cline` |
@@ -76,6 +78,7 @@ starts the tracker through the `playtime` command: install the npm package too.
 | Codex | hooks in `hooks.json` | open, busy, blocked |
 | OpenCode | in-process plugin | open, busy, blocked |
 | Pi | in-process extension, `agent-playtime/pi` | open, busy |
+| Oh My Pi | in-process extension, `agent-playtime/omp` | open, busy, blocked |
 | Copilot CLI | `hooks/playtime.json` in its config directory | open, busy, blocked |
 | Gemini CLI | hooks in `settings.json` | open, busy, blocked |
 | Cline | one executable per event in `~/.cline/hooks/` | open, busy |
@@ -94,8 +97,15 @@ Notes:
   sessions run that way are cut into short ones.
 - Goose's config directory is a guess (`~/.config/goose` or
   `~/.local/share/goose`); install is skipped if neither exists.
-- Pi's extension is installed as a one-line file that re-exports
-  `agent-playtime/pi`, so updating the package updates it.
+- Pi's and Oh My Pi's extensions are installed as one-line files that re-export
+  `agent-playtime/pi` and `agent-playtime/omp`, so updating the package updates them.
+- Oh My Pi's extension goes in `~/.omp/agent/extensions/`. A profile
+  (`OMP_PROFILE`) or `PI_CODING_AGENT_DIR` points Oh My Pi elsewhere, and it
+  will not load it from there; copy `playtime.js` into that `extensions/`.
+- Oh My Pi's subagents are not counted separately, since their time is already
+  the parent's turn, and approvals a subagent asks for count as busy, not
+  blocked. Blocked time comes from tool approvals, and listening for them turns
+  off Oh My Pi's speculative file reads.
 
 The status line integration is Claude Code only, through ccstatusline. Codex's
 status line takes a fixed set of built-in widgets and has no custom command
@@ -298,7 +308,8 @@ samples rather than guesses.
  Qwen, Droid, |----------->  one file ----------------->  sessions.jsonl --> reports
  Copilot,     |  (~5ms)     per event      every 15s        live.json     --> statusline
  Goose, Cline |   hooks                    kill(pid, 0)
- OpenCode, Pi |
+ OpenCode, Pi,|
+ Oh My Pi     |
  (in-process plugin or extension)
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "playtime",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Steam-style playtime tracking for CLI agent harnesses",
   "author": {
     "name": "Filip Marcac"

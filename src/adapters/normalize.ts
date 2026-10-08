@@ -103,6 +103,17 @@ const PI: Record<string, EventKind> = {
   ui_prompt_end: 'blocked_end',
 };
 
+/** Oh My Pi's extension drops subagents; a turn is one agent run. */
+const OMP: Record<string, EventKind> = {
+  session_start: 'session_start',
+  session_shutdown: 'session_end',
+  before_agent_start: 'turn_start',
+  agent_start: 'turn_start',
+  agent_end: 'turn_end',
+  tool_approval_requested: 'blocked_start',
+  tool_approval_resolved: 'blocked_end',
+};
+
 const HOOK_MAPS: Record<Harness, Record<string, EventKind>> = {
   'claude-code': CLAUDE_STYLE,
   codex: CODEX,
@@ -114,6 +125,7 @@ const HOOK_MAPS: Record<Harness, Record<string, EventKind>> = {
   cline: CLINE,
   opencode: OPENCODE,
   pi: PI,
+  omp: OMP,
 };
 
 /** Notification types that mean the agent is waiting on a permission decision. */

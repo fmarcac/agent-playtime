@@ -54,6 +54,11 @@ export function piExtensionSource(): string {
   return join(packageRoot(), 'dist', 'adapters', 'pi', 'extension.js');
 }
 
+/** The module Oh My Pi's extension file re-exports. */
+export function ompExtensionSource(): string {
+  return join(packageRoot(), 'dist', 'adapters', 'omp', 'extension.js');
+}
+
 /**
  * How to recognise our wiring in a harness config.
  *
@@ -74,6 +79,9 @@ export function wiringFor(harness: Harness): Wiring {
   }
   if (harness === 'pi') {
     return { marker: 'adapters/pi/extension.js', expected: piExtensionSource(), executable: false };
+  }
+  if (harness === 'omp') {
+    return { marker: 'adapters/omp/extension.js', expected: ompExtensionSource(), executable: false };
   }
   return { marker: EMIT_MARKER, expected: emitScriptPath(), executable: true };
 }
@@ -195,6 +203,12 @@ const openCodeDir = (env: NodeJS.ProcessEnv) =>
   join(env['XDG_CONFIG_HOME'] ?? join(home(env), '.config'), 'opencode');
 const piDir = (env: NodeJS.ProcessEnv) =>
   env['PI_CODING_AGENT_DIR'] ?? join(home(env), '.pi', 'agent');
+/**
+ * Oh My Pi also honours `PI_CODING_AGENT_DIR`, but that variable is set for Pi
+ * as often as for Oh My Pi, and following it would put both extensions in one
+ * directory. Only the default location is used.
+ */
+const ompDir = (env: NodeJS.ProcessEnv) => join(home(env), '.omp', 'agent');
 /** An absolute `GOOSE_PATH_ROOT` relocates everything goose keeps, plugins included. */
 const gooseRoot = (env: NodeJS.ProcessEnv): string | undefined => {
   const root = env['GOOSE_PATH_ROOT'];
@@ -342,6 +356,19 @@ const DESCRIPTORS: Record<Harness, Descriptor> = {
       wholeFile(
         join(piDir(env), 'extensions', 'playtime.js'),
         `export { default } from ${JSON.stringify(piExtensionSource())};\n`,
+      ),
+  },
+
+  // Oh My Pi kept Pi's extension contract, and finds `*.js` in the same layout.
+  omp: {
+    noun: 'extension',
+    target: (env) => join(ompDir(env), 'extensions', 'playtime.js'),
+    wiredFile: (env) => join(ompDir(env), 'extensions', 'playtime.js'),
+    presence: (env) => [ompDir(env)],
+    plan: async (env) =>
+      wholeFile(
+        join(ompDir(env), 'extensions', 'playtime.js'),
+        `export { default } from ${JSON.stringify(ompExtensionSource())};\n`,
       ),
   },
 };

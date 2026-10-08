@@ -22,7 +22,7 @@ async function withScratch(body: (env: NodeJS.ProcessEnv, root: string) => Promi
   }
 }
 
-const PRESENCE = ['.claude', '.codex', '.config/opencode', '.pi/agent', '.copilot', '.gemini', '.cline', '.qwen', '.config/goose', '.factory'];
+const PRESENCE = ['.claude', '.codex', '.config/opencode', '.pi/agent', '.omp/agent', '.copilot', '.gemini', '.cline', '.qwen', '.config/goose', '.factory'];
 
 test('with nothing installed, onlyFound reports every harness as not found', async () => {
   await withScratch(async (env) => {
@@ -148,6 +148,18 @@ test('Pi gets a re-export of the extension', async () => {
     assert.match(
       await readFile(join(root, '.pi', 'agent', 'extensions', 'playtime.js'), 'utf8'),
       /^export \{ default \} from ".*adapters\/pi\/extension\.js";\n$/,
+    );
+  });
+});
+
+test('Oh My Pi gets its own re-export, even when PI_CODING_AGENT_DIR points at Pi', async () => {
+  await withScratch(async (env, root) => {
+    await mkdir(join(root, '.omp', 'agent'), { recursive: true });
+    await install('omp', { env: { ...env, PI_CODING_AGENT_DIR: join(root, 'pi') } });
+
+    assert.match(
+      await readFile(join(root, '.omp', 'agent', 'extensions', 'playtime.js'), 'utf8'),
+      /^export \{ default \} from ".*adapters\/omp\/extension\.js";\n$/,
     );
   });
 });

@@ -8,7 +8,7 @@
     {
       "name": "playtime",
       "description": "Deduplicated open time, agent busy time and per-project hours for Claude Code",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "source": "./",
       "author": {
         "name": "Filip Marcac"

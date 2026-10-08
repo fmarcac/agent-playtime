@@ -47,7 +47,7 @@ Reports
   playtime today|month|year    open on one window (week works too)
   playtime <project>           drill into one project
   playtime harness <name>      drill into one harness: claude-code, codex, opencode,
-                               pi, copilot, gemini, cline, qwen, goose or droid
+                               pi, omp, copilot, gemini, cline, qwen, goose or droid
 
   In a terminal a report is browsable: tab and shift-tab move between windows,
   q quits. Piped, or in any format but text, it prints one static block.

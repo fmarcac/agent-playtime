@@ -78,9 +78,11 @@ export function referencedPath(contents: string, harness: Harness): string | nul
   // A hook command is a string inside a JSON string, so the quotes around the
   // path are backslash-escaped and matching on them finds nothing. Match the
   // path itself: everything up to emit.sh that cannot be part of the quoting.
-  // OpenCode and Pi load a module, so theirs is named in a re-export.
+  // OpenCode, Pi and Oh My Pi load a module, so theirs is named in a re-export.
   const pattern =
-    harness === 'opencode' || harness === 'pi' ? /from\s+"([^"]+)"/ : /([^"\\\s]*emit\.sh)/;
+    harness === 'opencode' || harness === 'pi' || harness === 'omp'
+      ? /from\s+"([^"]+)"/
+      : /([^"\\\s]*emit\.sh)/;
   return pattern.exec(contents)?.[1] ?? null;
 }
 
